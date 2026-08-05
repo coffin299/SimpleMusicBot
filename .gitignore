@@ -10,12 +10,15 @@
 !.gitignore
 !README.md
 !requirements.txt
-!config-example.json
+!config.default.yaml
 !start.bat
 !**/*.py
 !services/
 !domain/
 !domain/entity/
 !cogs/
+!cogs/**/*
+!tests/
+!tests/**/*
 !docs/
 !docs/**/*

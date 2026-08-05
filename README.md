@@ -1,171 +1,103 @@
 # music-bot-arona
-Development discontinued, merged into the following repository
-https://github.com/coffin399/llmcord-JP-plana
 
-# Discord Music Bot
+Discord 上で音楽を再生する単体動作型 Bot です。  
+再生エンジン・コマンド・UI は [ProjectMOMOKA](https://github.com/coffin299/ProjectMOMOKA) の Music Cog を移植しています。
 
-Discord上で音楽を再生できる単独動作型のBotプログラムです。
+![Music Playback](https://momoka-project.com/assets/images/playmusic.png)
 
 ## 必要要件
 
-- Python 3.8以上
-- FFmpeg（音声処理用）
+- Python 3.10 以上推奨
+- FFmpeg（PATH または `music.ffmpeg_path`）
 - Discord Bot Token
+- （推奨）YouTube 再生安定化用の cookie ファイル / Deno または Node（yt-dlp EJS）
 
-## インストール手順
+## ファイル構成
 
-### 1. 必要なパッケージをインストール
+```
+music-bot-arona/
+├── bot.py                      # 起動・設定読込・Cog ロードのみ
+├── cogs/music/                 # Momoka 由来 Music Cog
+│   ├── music_cog.py
+│   ├── guild_state.py
+│   ├── music_views.py
+│   ├── music_helpers.py
+│   ├── error/errors.py
+│   └── plugins/
+│       ├── ytdlp_wrapper.py
+│       ├── audio_mixer.py
+│       └── process_log_bridge.py
+├── config.default.yaml         # 既定設定（Momoka music_config 準拠）
+├── config.yaml                 # 実設定（自分で作成・Git 管理外）
+├── requirements.txt
+├── start.bat                   # Creates .venv if missing, installs deps, starts bot
+├── tests/                      # 単体テスト
+└── docs/                       # Markdown ドキュメント
+```
+
+## インストール
 
 ```bash
 pip install -r requirements.txt
+copy config.default.yaml config.yaml
 ```
 
-### 2. FFmpegをインストール
+`config.yaml` の `token` を Discord Bot Token に置き換えてください。
 
-**Windows:**
-1. [FFmpeg公式サイト](https://ffmpeg.org/download.html)からダウンロード
-2. PATHに追加するか、`config.yaml`で`ffmpeg_path`を指定
+### Discord Developer Portal
 
-**Linux/Mac:**
-```bash
-# Ubuntu/Debian
-sudo apt update && sudo apt install ffmpeg
+Privileged Gateway Intents:
 
-# Mac (Homebrewを使用)
-brew install ffmpeg
-```
+- MESSAGE CONTENT INTENT
+- SERVER MEMBERS INTENT
 
-### 3. ファイル構成
+OAuth2 Scopes: `bot`, `applications.commands`  
+主要権限: Send Messages / Embed Links / Connect / Speak / Use Voice Activity など
 
-```
-music-bot/
-├── bot.py                 # メインプログラム
-├── services/ytdlp_wrapper.py # yt-dlpラッパー
-├── config.yaml            # 設定ファイル
-├── config.default.yaml    # 設定例（初回起動時にコピーして使用）
-├── requirements.txt       # 依存関係リスト
-├── cache/                 # キャッシュディレクトリ（自動生成）
-└── nico_cookies.txt       # ニコニコ動画用Cookie（オプション、自動生成）
-```
-
-### 4. Discord Bot の作成
-
-1. [Discord Developer Portal](https://discord.com/developers/applications)にアクセス
-2. 「New Application」をクリックしてアプリケーションを作成
-3. 左メニューの「Bot」をクリック
-4. 「Add Bot」をクリックしてBotを作成
-5. 「Token」の下の「Copy」ボタンでトークンをコピー
-6. 「Privileged Gateway Intents」で以下を有効化：
-   - MESSAGE CONTENT INTENT
-   - SERVER MEMBERS INTENT
-
-### 5. Botをサーバーに招待
-
-1. 左メニューの「OAuth2」→「URL Generator」をクリック
-2. 「Scopes」で以下を選択：
-   - `bot`
-   - `applications.commands`
-3. 「Bot Permissions」で以下を選択：
-   - Send Messages
-   - Embed Links
-   - Attach Files
-   - Read Message History
-   - Add Reactions
-   - Connect
-   - Speak
-   - Use Voice Activity
-   - Priority Speaker
-4. 生成されたURLをコピーしてブラウザで開き、サーバーに招待
-
-## 使い方
-
-### 初回起動と設定
-
-1. `config.default.yaml` を `config.yaml` としてコピーします。
-2. `config.yaml` を開いて、`token` の値をあなたのBotトークンに置き換えます。
-   ```yaml
-   token: "YOUR_BOT_TOKEN_HERE"
-   ```
-3. 必要に応じて、`music` セクションの設定（`default_volume`, `ffmpeg_path` など）を調整します。
-
-### Botの起動
+## 起動
 
 ```bash
 python bot.py
 ```
 
+または `start.bat`（`.venv` が無ければ自動作成し、依存を入れて起動）
+
 ## コマンド一覧
 
-### 🎵 再生コントロール
-
 | コマンド | 説明 |
 |---------|------|
-| `/play <曲名またはURL>` | 曲を再生またはキューに追加 |
+| `/play <query>` | 曲名検索または URL を再生 / キュー追加 |
+| `/seek <time>` | 指定位置へシーク（`1:30` / `90`） |
 | `/pause` | 一時停止 |
-| `/resume` | 再生再開 |
-| `/stop` | 再生停止＆キュークリア |
-| `/skip` | 現在の曲をスキップ |
-| `/seek <時間>` | 指定時刻に移動 (例: `1:30` または `90`) |
-| `/volume <0-200>` | 音量変更 |
+| `/resume` | 再開 |
+| `/skip` | スキップ |
+| `/stop` | 停止＆キュークリア |
+| `/leave` | VC 切断 |
+| `/queue` | キュー表示 |
+| `/nowplaying` | 再生中表示 |
+| `/shuffle` | キューシャッフル |
+| `/clear` | キュークリア |
+| `/remove <n>` | キューから削除 |
+| `/volume <0-200>` | 音量 |
+| `/loop <off/one/all>` | ループ |
+| `/join` | VC 接続 |
 
-### 📋 キュー管理
+再生中は Components V2 の操作パネル（Pause / Skip / Stop / Loop / QLoop）も利用できます。
 
-| コマンド | 説明 |
-|---------|------|
-| `/queue` | キューを表示 |
-| `/nowplaying` | 現在再生中の曲を表示 |
-| `/shuffle` | キューをシャッフル |
-| `/clear` | キューをクリア |
-| `/remove <番号>` | 指定番号の曲を削除 |
-| `/loop <off/one/all>` | ループモード設定 |
+## 設定の要点（Momoka 準拠）
 
-### 🔊 ボイスチャンネル
+| キー | 既定 | 意味 |
+|------|------|------|
+| `music.default_volume` | 20 | 初期音量 (%) |
+| `music.max_queue_size` | 10000 | キュー上限 |
+| `music.max_guilds` | 50 | 同時保持ギルド状態上限 |
+| `music.auto_leave_timeout` | 3 | 無人 VC 自動退出（秒） |
+| `music.max_playlist_items` | 10000 | プレイリスト展開上限 |
+| `music.inactive_timeout_minutes` | 3 | 非アクティブ状態掃除（分） |
+| `music.youtube_cookie_file` | `youtube_cookies.txt` | YouTube cookie |
 
-| コマンド | 説明 |
-|---------|------|
-| `/join` | ボイスチャンネルに接続 |
-| `/leave` | ボイスチャンネルから切断 |
-| `/music_help` | ヘルプを表示 |
-
-## 対応サービス
-
-- YouTube
-- ニコニコ動画（オプション：ログイン情報を設定可能）
-- SoundCloud
-- その他yt-dlpが対応する動画サイト
-
-## トラブルシューティング
-
-### Botがオンラインにならない
-- トークンが正しく設定されているか確認
-- インターネット接続を確認
-
-### コマンドが表示されない
-- Botに必要な権限があるか確認
-- Botを再起動してコマンドの同期を待つ（最大1時間）
-
-### 音楽が再生されない
-- FFmpegが正しくインストールされているか確認
-- Botがボイスチャンネルに接続する権限があるか確認
-
-### エラー: 必須コンポーネントのインポートに失敗しました。
-- `requirements.txt` に記載されているすべてのパッケージがインストールされているか確認してください。
-- 特に `PyYAML` がインストールされているか確認してください。
-
-## カスタマイズ
-
-`config.yaml`で以下の設定が可能：
-
-```yaml
-music:
-  ffmpeg_path: "ffmpeg"           # FFmpegのパス
-  auto_leave_timeout: 300         # 自動退出までの秒数
-  max_queue_size: 1000            # 最大キューサイズ
-  default_volume: 20              # デフォルト音量 (0-200)
-  messages:                       # メッセージのカスタマイズ
-    # 各種メッセージをカスタマイズ可能
-```
+詳細は [docs/configuration.md](docs/configuration.md) を参照してください。
 
 ## ライセンス
 
-このプログラムはMITライセンスで提供されています。
+MIT

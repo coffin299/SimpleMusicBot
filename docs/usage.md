@@ -1,160 +1,81 @@
 # 使用方法ガイド
 
-Music Bot Aronaの基本的な使用方法を説明します。
+Music Bot Arona（Momoka Music Cog 移植版）の使い方です。
 
-## 🎯 基本的な使い方
+## 準備
 
-### 1. ボットをサーバーに招待
+1. Bot をサーバーへ招待（`bot` + `applications.commands`）
+2. 再生したいボイスチャンネルへ自分が参加
+3. テキストチャンネルでスラッシュコマンドを実行
 
-まず、ボットをDiscordサーバーに招待する必要があります。
-
-1. [Discord Developer Portal](https://discord.com/developers/applications)にアクセス
-2. あなたのアプリケーションを選択
-3. 左メニューの「OAuth2」→「URL Generator」をクリック
-4. 「Scopes」で以下を選択：
-   - `bot`
-   - `applications.commands`
-5. 「Bot Permissions」で以下を選択：
-   - Send Messages
-   - Embed Links
-   - Attach Files
-   - Read Message History
-   - Add Reactions
-   - Connect
-   - Speak
-   - Use Voice Activity
-   - Priority Speaker
-6. 生成されたURLをコピーしてブラウザで開き、サーバーに招待
-
-### 2. ボイスチャンネルに参加
-
-音楽を再生したいボイスチャンネルに参加してください。
-
-### 3. 音楽を再生
-
-以下のコマンドで音楽を再生できます：
+## 基本の再生
 
 ```
-/play 素晴らしい音楽
+/play 曲名
+/play https://www.youtube.com/watch?v=...
 ```
 
-または、URLを直接指定することも可能です：
+- 再生中に追加するとキューへ入ります
+- プレイリスト URL は `max_playlist_items` まで展開されます
+- DRM 保護サイト（例: Spotify）は再生できません
 
-```
-/play https://youtube.com/watch?v=...
-```
+## 操作パネル
 
-## 🎵 音楽の操作
+`/play` 成功後の Now Playing パネルから次を操作できます。
 
-### 再生コントロール
+- Pause / Resume
+- Skip
+- Stop（確認ダイアログあり）
+- Loop（1曲） / QLoop（キュー全体）
+- キューページング（曲が多いとき）
 
-- **一時停止**: `/pause`
-- **再生再開**: `/resume`
-- **停止**: `/stop`
-- **スキップ**: `/skip`
-- **音量変更**: `/volume 50` (0-200の範囲)
+## コマンド
 
-### シーク機能
+### 再生
 
-特定の時刻に移動したい場合：
+| コマンド | 例 |
+|---------|----|
+| `/play` | `/play never gonna give you up` |
+| `/seek` | `/seek 1:30` |
+| `/pause` | `/pause` |
+| `/resume` | `/resume` |
+| `/skip` | `/skip` |
+| `/stop` | `/stop` |
+| `/volume` | `/volume 40` |
+| `/loop` | `/loop one` |
 
-```
-/seek 1:30    # 1分30秒に移動
-/seek 90       # 90秒に移動
-```
+### キュー
 
-## 📋 キュー管理
+| コマンド | 説明 |
+|---------|------|
+| `/queue` | キュー一覧 |
+| `/nowplaying` | 再生中情報 |
+| `/shuffle` | シャッフル |
+| `/clear` | クリア |
+| `/remove` | 番号指定で削除 |
 
-### キューの表示
+### VC
 
-現在の再生キューを確認：
+| コマンド | 説明 |
+|---------|------|
+| `/join` | 自分の VC へ接続 |
+| `/leave` | 切断 |
 
-```
-/queue
-```
+## 自動退出
 
-### キューの操作
+人間がいなくなった VC からは `auto_leave_timeout`（既定 3 秒）後に退出します。
 
-- **シャッフル**: `/shuffle`
-- **クリア**: `/clear`
-- **曲の削除**: `/remove 3` (3番目の曲を削除)
+## トラブルシュート
 
-### ループ再生
+| 症状 | 確認点 |
+|------|--------|
+| スラッシュが出ない | Intent / 招待スコープ / `tree.sync` 成否 |
+| 音が出ない | FFmpeg PATH、Bot の Speak 権限、自分も同じ VC |
+| YouTube だけ失敗 | cookie、Deno/Node、年齢制限・地域制限 |
+| ニコニコ失敗 | `nico_cookies.txt`、ログイン状態 |
 
-- **オフ**: `/loop off`
-- **現在の曲をループ**: `/loop one`
-- **キュー全体をループ**: `/loop all`
+## 含まない機能
 
-## 🎨 現在の曲情報
-
-再生中の曲の詳細情報を表示：
-
-```
-/nowplaying
-```
-
-このコマンドでは以下が表示されます：
-- 曲名とアーティスト
-- 再生時間と総時間
-- プログレスバー
-- リクエストしたユーザー
-- ループモード
-
-## 🔧 高度な機能
-
-### プレイリストの再生
-
-YouTubeのプレイリストURLを指定すると、複数の曲を一度にキューに追加できます：
-
-```
-/play https://youtube.com/playlist?list=...
-```
-
-### 検索機能
-
-曲名やアーティスト名で検索：
-
-```
-/play アーティスト名 曲名
-```
-
-### ニコニコ動画の再生
-
-ニコニコ動画のURLも対応しています：
-
-```
-/play https://nico.ms/sm...
-```
-
-## 🎯 使用例
-
-### 基本的な音楽セッション
-
-1. ボイスチャンネルに参加
-2. `/play お気に入りの曲` で音楽を開始
-3. `/queue` でキューを確認
-4. `/volume 80` で音量を調整
-5. `/nowplaying` で現在の曲を確認
-
-### プレイリストの管理
-
-1. `/play プレイリストURL` でプレイリストを追加
-2. `/shuffle` でキューをシャッフル
-3. `/loop all` でループモードを設定
-4. `/queue` でキューを確認・管理
-
-## ⚠️ 注意事項
-
-- ボットはボイスチャンネルに参加している必要があります
-- 音楽の再生には適切な権限が必要です
-- 長時間の再生では、定期的にキューを確認することをお勧めします
-
-## 🆘 ヘルプ
-
-コマンドの一覧を確認したい場合：
-
-```
-/music_help
-```
-
-このコマンドで、利用可能なすべてのコマンドとその説明が表示されます。
+- TTS 読み上げとの同時ミキシング操作
+- LLM からの音楽コマンド実行
+- 再起動後の自動再生復元

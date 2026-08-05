@@ -1,56 +1,59 @@
+# 単体音楽Bot用の既定設定（ProjectMOMOKA-1 music_config を正とする）
+# 実運用では本ファイルを config.yaml へコピーし、token のみ必ず変更すること。
+
+token: "YOUR_BOT_TOKEN_HERE"
+prefix: "!"
+bot_id: "arona"
+
 music:
   default_volume: 20
   max_queue_size: 10000
+  # メモリに保持するギルド再生状態の上限。上限到達時は非再生の最古状態を削除してから新規受付する。
+  max_guilds: 50
   auto_leave_timeout: 3
-  max_playlist_items: 5000
+  max_playlist_items: 10000
   inactive_timeout_minutes: 3
-  ffmpeg_before_options: "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
-  ffmpeg_options: "-vn"
+  ffmpeg_path: ffmpeg
+  ffmpeg_before_options: -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5
+  ffmpeg_options: -vn
+  youtube_cookie_file: youtube_cookies.txt
+  gdrive_folder_id: YOUR_GDRIVE_FOLDER_ID_HERE
   niconico:
-    email: ""
-    password: ""
+    email: ''
+    password: ''
   messages:
-    join_voice_channel_first: "❌ Please join a voice channel first."
-    bot_not_in_voice_channel: "❌ The bot is not connected to a voice channel."
-    already_connected: "✅ Already connected to a voice channel."
-    leaving_voice_channel: "👋 Left the voice channel."
-    auto_left_empty_channel: "👋 Auto-left the voice channel as it became empty."
-
-    # Playback
+    join_voice_channel_first: ❌ Please join a voice channel first.
+    bot_not_in_voice_channel: ❌ The bot is not connected to a voice channel.
+    already_connected: ✅ Already connected to a voice channel.
+    leaving_voice_channel: 👋 Left the voice channel.
+    auto_left_empty_channel: 👋 Auto-left the voice channel as it became empty.
     now_playing: "🎵 **Now Playing:** {title}\n⏱️ **Duration:** {duration}\n👤 **Requested by:** {requester_display_name}"
-    now_playing_nothing: "❌ Nothing is currently playing."
+    now_playing_nothing: ❌ Nothing is currently playing.
     added_to_queue: "➕ **Added to queue:** {title}\n⏱️ **Duration:** {duration}\n👤 **Requested by:** {requester_display_name}"
-    added_playlist_to_queue: "➕ Added **{count} songs** from playlist to queue."
-    playback_paused: "⏸️ Playback paused."
-    playback_resumed: "▶️ Playback resumed."
-    stopped_playback: "⏹️ Stopped playback and cleared queue."
-    skipped_song: "⏭️ Skipped **{title}**."
-    nothing_to_skip: "❌ Nothing to skip."
-    volume_set: "🔊 Volume set to **{volume}%**."
-    searching_for_song: "🚀 searching **{query}** ..."
-
-    # Seek
-    seeked_to_position: "⏩ Seeked to **{position}**."
-    invalid_time_format: "❌ Invalid time format. Example: `1:30` or `90`"
-    seek_beyond_duration: "❌ The specified time exceeds the song duration (**{duration}**)."
-
-    # Queue
-    queue_title: "📜 **Queue** ({count} songs)"
-    queue_empty: "📭 The queue is empty."
-    queue_ended: "📭 Queue finished. Disconnecting from voice channel."
-    queue_shuffled: "🔀 Queue shuffled."
-    queue_cleared: "🗑️ Queue cleared."
-    song_removed: "➖ Removed **{title}** from queue."
-    invalid_queue_number: "❌ Invalid queue number."
-    max_queue_size_reached: "❌ Queue limit reached ({max_size} songs)."
-
-    # Loop
-    loop_off: "🔁 Loop mode: OFF"
-    loop_one: "🔂 Loop mode: ONE (current song)"
-    loop_all: "🔁 Loop mode: ALL (entire queue)"
-
-    # Errors
-    error_playing: "❌ An error occurred: {error}"
-    error_fetching_song: "❌ Error fetching song: {error}"
-    search_no_results: "🔍 No results found for **{query}**."
-    error_message_wrapper: "❌ {error}"
+    added_playlist_to_queue: ➕ Added **{count} songs** from playlist to queue.
+    playback_paused: ⏸️ Playback paused.
+    playback_resumed: ▶️ Playback resumed.
+    stopped_playback: ⏹️ Stopped playback and cleared queue.
+    skipped_song: ⏭️ Skipped **{title}**.
+    nothing_to_skip: ❌ Nothing to skip.
+    volume_set: 🔊 Volume set to **{volume}%**.
+    searching_for_song: 🚀 searching **{query}** ...
+    seeked_to_position: ⏩ Seeked to **{position}**.
+    invalid_time_format: '❌ Invalid time format. Example: `1:30` or `90`'
+    seek_beyond_duration: ❌ The specified time exceeds the song duration (**{duration}**).
+    queue_title: 📜 **Queue** ({count} songs)
+    queue_empty: 📭 The queue is empty.
+    queue_ended: 📭 Queue finished. Disconnecting from voice channel.
+    queue_shuffled: 🔀 Queue shuffled.
+    queue_cleared: 🗑️ Queue cleared.
+    song_removed: ➖ Removed **{title}** from queue.
+    invalid_queue_number: ❌ Invalid queue number.
+    max_queue_size_reached: ❌ Queue limit reached ({max_size} songs).
+    loop_off: '🔁 Loop mode: OFF'
+    loop_one: '🔂 Loop mode: ONE (current song)'
+    loop_all: '🔁 Loop mode: ALL (entire queue)'
+    error_playing: '❌ An error occurred: {error}'
+    error_fetching_song: '❌ Error fetching song: {error}'
+    error_drm_protected: ❌ この URL は DRM 保護または非対応サイトのため再生できません。YouTube / ニコニコ動画の URL、または曲名で検索してください。
+    search_no_results: 🔍 No results found for **{query}**.
+    error_message_wrapper: ❌ {error}
