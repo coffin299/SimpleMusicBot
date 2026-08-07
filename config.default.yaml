@@ -3,7 +3,6 @@
 
 token: "YOUR_BOT_TOKEN_HERE"
 prefix: "!"
-bot_id: "arona"
 
 music:
   default_volume: 20
@@ -17,10 +16,6 @@ music:
   ffmpeg_before_options: -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5
   ffmpeg_options: -vn
   youtube_cookie_file: youtube_cookies.txt
-  gdrive_folder_id: YOUR_GDRIVE_FOLDER_ID_HERE
-  niconico:
-    email: ''
-    password: ''
   messages:
     join_voice_channel_first: ❌ Please join a voice channel first.
     bot_not_in_voice_channel: ❌ The bot is not connected to a voice channel.

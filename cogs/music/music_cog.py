@@ -1,15 +1,10 @@
 import asyncio
-import collections
 import gc
-import io
-import itertools
 import logging
 import math
 import random
 import re
-import subprocess
 import time
-from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -100,7 +95,7 @@ def parse_time_to_seconds(time_str: str) -> Optional[int]:
 
 
 class MusicCog(commands.Cog, name="music_cog"):
-    # get_cog / GUI 合算用の正式名（変更時は呼び出し側も合わせる）
+    # get_cog 用の正式名（変更時は呼び出し側も合わせる）
     COG_NAME = "music_cog"
 
     def __init__(self, bot: commands.Bot):
@@ -137,12 +132,6 @@ class MusicCog(commands.Cog, name="music_cog"):
         self.inactive_timeout_minutes = self.music_config.get('inactive_timeout_minutes', 30)
         self.global_connection_lock = asyncio.Lock()
         self.cleanup_task = None
-        # 単体音楽Botでは DB 永続化を使わないため、復元は常に未実施扱いとする
-        self._vc_sessions_restored = True
-        # 復元中に pause へ戻すギルド（guild_id -> True）※永続化無効時は未使用
-        self._pending_restore_pause: Dict[int, bool] = {}
-        # 再起動セッションDBは単体Botでは持ち込まない
-        self._vc_session_store = None
 
     async def cog_load(self):
         # 起動時に yt-dlp / プロジェクト cache を掃除して古いストリーム情報を残さない
@@ -171,10 +160,10 @@ class MusicCog(commands.Cog, name="music_cog"):
         # bot.config（configs/ マージ結果）のみ使う。ルート config.yaml は非対応。
         if hasattr(self.bot, 'config') and self.bot.config:
             return self.bot.config
-        # 注入が無い場合は空 dict（起動時 loader が前提）
+        # 注入が無い場合は空 dict（起動時 bot.py の load_config が前提）
         logger.warning(
             "bot.config is missing; music settings fall back to empty. "
-            "Ensure configs/*_config.yaml are loaded at startup."
+            "Ensure config.yaml is loaded at startup."
         )
         return {}
 
@@ -243,266 +232,6 @@ class MusicCog(commands.Cog, name="music_cog"):
                     guild_id,
                     e,
                 )
-
-    def _bot_id_key(self) -> str:
-        """永続化キー用の bot_id を返す。"""
-        # Momoka.bot_id があればそれを使う
-        return str(getattr(self.bot, "bot_id", None) or "unknown")
-
-    @staticmethod
-    def _track_to_persist_dict(track: Track) -> dict:
-        """Track から永続化可能なフィールドだけを抜き出す。"""
-        # stream_url / http_headers は揮発なので保存しない
-        return {
-            "url": track.url,
-            "title": track.title,
-            "duration": int(track.duration or 0),
-            "thumbnail": track.thumbnail,
-            "requester_id": track.requester_id,
-            "original_query": track.original_query,
-            "uploader": track.uploader,
-            "uploader_url": track.uploader_url,
-        }
-
-    @staticmethod
-    def _track_from_persist_dict(data: dict) -> Optional[Track]:
-        """永続化 dict から Track を再構築する。"""
-        # url が無ければ復元不能
-        if not data or not data.get("url"):
-            # 失敗
-            return None
-        # Track を組み立てる
-        return Track(
-            url=str(data["url"]),
-            title=str(data.get("title") or "Unknown"),
-            duration=int(data.get("duration") or 0),
-            thumbnail=data.get("thumbnail"),
-            requester_id=data.get("requester_id"),
-            original_query=data.get("original_query"),
-            uploader=data.get("uploader"),
-            uploader_url=data.get("uploader_url"),
-        )
-
-    def _snapshot_queue_tracks(self, state: GuildState) -> list:
-        """キュー内容を永続化用リストへコピーする（キューは破壊しない）。"""
-        # asyncio.Queue の内部 deque を読む（永続化直前のスナップショット用途）
-        raw = getattr(state.queue, "_queue", None)
-        # 内部構造が取れなければ空
-        if raw is None:
-            # 空リスト
-            return []
-        # 永続化 dict の列
-        items = []
-        # 各 Track を写す
-        for track in list(raw):
-            # Track 以外は無視
-            if track is None:
-                # 次へ
-                continue
-            # 永続化 dict を積む
-            items.append(self._track_to_persist_dict(track))
-        # スナップショットを返す
-        return items
-
-    async def persist_vc_sessions_for_restart(self) -> None:
-        """グレースフル終了前の VC 永続化（単体Botでは無効）。"""
-        # DB 依存を持ち込まないため何もしない
-        logger.info(
-            "%s: VC session persistence is disabled in standalone music bot",
-            self._bot_id_key(),
-        )
-
-    def _delete_vc_restart_session(self, guild_id: int) -> None:
-        """再起動セッション行の削除（単体Botでは無効）。"""
-        # 永続化ストアが無い場合は何もしない
-        if self._vc_session_store is None:
-            # 早期リターン
-            return
-        try:
-            # bot × guild の行を消す
-            self._vc_session_store.delete(self._bot_id_key(), guild_id)
-        except Exception as e:
-            # 削除失敗は再生自体を止めない
-            logger.warning(
-                "Guild %s: failed to delete VC restart session: %s",
-                guild_id,
-                e,
-            )
-
-    async def _connect_voice_channel(
-        self,
-        guild_id: int,
-        channel: discord.abc.Connectable,
-    ) -> Optional[discord.VoiceClient]:
-        """コンテキスト無しで指定 VC へ接続する（再起動復元用）。"""
-        # 状態を取得または作成する
-        state = self._get_guild_state(guild_id)
-        # 上限等で作成できなければ失敗
-        if not state:
-            # 接続不可
-            return None
-        # ギルドオブジェクト
-        guild = self.bot.get_guild(guild_id)
-        # 接続ロックで直列化する
-        async with state.connection_lock:
-            # 既に同じチャンネルへ接続済みならそれを返す
-            if (
-                state.voice_client
-                and state.voice_client.is_connected()
-                and state.voice_client.channel
-                and state.voice_client.channel.id == channel.id
-            ):
-                # 既存接続
-                return state.voice_client
-            # 別チャンネルや切断済みなら掃除する
-            if state.voice_client:
-                # 切断してから入り直す
-                await state.cleanup_voice_client()
-                # 短い間隔を空ける
-                await asyncio.sleep(0.3)
-            try:
-                # VC へ接続する
-                state.voice_client = await asyncio.wait_for(
-                    channel.connect(timeout=30.0, reconnect=True, self_deaf=False),
-                    timeout=35.0,
-                )
-                # サーバー側スピーカーミュートを試みる
-                if guild is not None:
-                    # deafen を適用する
-                    await self._apply_server_deafen(guild)
-                # 接続成功をログする
-                logger.info(
-                    "Guild %s: Restored VC connection to %s",
-                    guild_id,
-                    getattr(channel, "name", channel.id),
-                )
-                # VoiceClient を返す
-                return state.voice_client
-            except Exception as e:
-                # 接続失敗をログする
-                logger.warning(
-                    "Guild %s: failed to reconnect VC for restore: %s",
-                    guild_id,
-                    e,
-                )
-                # 参照をクリアする
-                state.voice_client = None
-                # 失敗
-                return None
-
-    async def restore_vc_sessions_after_restart(self) -> None:
-        """起動後の VC セッション復元（単体Botでは無効）。"""
-        # 二重呼び出しや将来の有効化に備え、完了フラグだけ立てる
-        self._vc_sessions_restored = True
-        # ストア未接続なら何もしない
-        if self._vc_session_store is None:
-            # 無効化をログに残す
-            logger.info(
-                "%s: VC session restore is disabled in standalone music bot",
-                self._bot_id_key(),
-            )
-            # 早期リターン
-            return
-
-    async def _restore_one_vc_session(self, session: dict) -> None:
-        """1 ギルド分の VC セッションを復元する。"""
-        # ギルド ID
-        guild_id = int(session["guild_id"])
-        # ギルドを取得する
-        guild = self.bot.get_guild(guild_id)
-        # ギルドが無ければ行削除して終了
-        if guild is None:
-            # ゴミ行を消す
-            self._delete_vc_restart_session(guild_id)
-            # 終了
-            return
-        # VC チャンネルを取得する
-        voice_channel = guild.get_channel(int(session["voice_channel_id"]))
-        # チャンネルが無ければ削除して終了
-        if voice_channel is None or not isinstance(
-            voice_channel, (discord.VoiceChannel, discord.StageChannel)
-        ):
-            # ゴミ行を消す
-            self._delete_vc_restart_session(guild_id)
-            # 終了
-            return
-        # 状態を用意する
-        state = self._get_guild_state(guild_id)
-        # 上限で作れなければ削除して終了
-        if not state:
-            # 行を消す
-            self._delete_vc_restart_session(guild_id)
-            # 終了
-            return
-        # テキストチャンネルを復元する
-        if session.get("text_channel_id"):
-            # last_text_channel を戻す
-            state.last_text_channel_id = int(session["text_channel_id"])
-        # 音量を戻す
-        state.volume = float(session.get("volume") or state.volume)
-        # ループモードを戻す
-        loop_name = str(session.get("loop_mode") or "OFF").upper()
-        try:
-            # Enum へ変換する
-            state.loop_mode = LoopMode[loop_name]
-        except KeyError:
-            # 不明値は OFF
-            state.loop_mode = LoopMode.OFF
-        # キューを復元する
-        for item in session.get("queue") or []:
-            # Track を再構築する
-            track = self._track_from_persist_dict(item)
-            # 成功したものだけ積む
-            if track is not None:
-                # キューへ入れる
-                await state.queue.put(track)
-        # 現在曲を復元する
-        current = self._track_from_persist_dict(session.get("current_track") or {})
-        # 現在曲もキューも無ければ削除して終了
-        if current is None and state.queue.empty():
-            # 行を消す
-            self._delete_vc_restart_session(guild_id)
-            # 終了
-            return
-        # VC へ接続する
-        vc = await self._connect_voice_channel(guild_id, voice_channel)
-        # 接続失敗なら削除して終了
-        if vc is None:
-            # 行を消す
-            self._delete_vc_restart_session(guild_id)
-            # テキストへ通知する
-            if state.last_text_channel_id:
-                # 失敗通知
-                await self._send_background_message(
-                    state.last_text_channel_id,
-                    "error_playing",
-                    error="Failed to restore voice connection after restart.",
-                )
-            # 終了
-            return
-        # シーク位置
-        position = max(0, int(session.get("position_sec") or 0))
-        # 一時停止だったかを覚える
-        was_paused = bool(session.get("is_paused"))
-        # 再生後に pause するフラグ
-        if was_paused:
-            # ギルド単位で保留する
-            self._pending_restore_pause[guild_id] = True
-        # 現在曲がある場合は current にセットしてから強制再生する
-        if current is not None:
-            # 現在曲をセットする
-            state.current_track = current
-            # 再生中フラグは下ろしたまま再生処理へ渡す
-            state.is_playing = False
-            # キューを消費せず現在曲を再開する（位置 0 でも force_current）
-            await self._play_next_song(
-                guild_id,
-                seek_seconds=position,
-                force_current=True,
-            )
-        else:
-            # 現在曲が無くキューだけなら通常の次曲再生
-            await self._play_next_song(guild_id)
 
     @tasks.loop(minutes=5)
     async def cleanup_task_loop(self):
@@ -584,44 +313,6 @@ class MusicCog(commands.Cog, name="music_cog"):
         """既存のギルド状態だけを返し、存在しなければ作成しない。"""
         # コールバック・クリーンアップから状態を復活させないため辞書を直接参照する
         return self.guild_states.get(guild_id)
-
-    def get_active_vc_guild_count(self) -> int:
-        """VC に接続中のギルド数を返す（GUI 稼働モニタ用）。"""
-        # 接続済み voice_client を持つギルドだけを数える
-        return sum(
-            1
-            for s in self.guild_states.values()
-            if s.voice_client and s.voice_client.is_connected()
-        )
-
-    def get_active_vc_snapshots(self) -> list:
-        """接続中 VC のギルド名・曲名・一時停止・キュー件数を返す。"""
-        # 結果行
-        rows = []
-        # ギルド状態を走査する
-        for guild_id, state in list(self.guild_states.items()):
-            # 未接続は除外する
-            if not (state.voice_client and state.voice_client.is_connected()):
-                continue
-            # Discord ギルドオブジェクト（名前用・メンバー一覧は触らない）
-            guild = self.bot.get_guild(guild_id)
-            # 曲名
-            title = None
-            # 再生中トラックがあればタイトルを取る
-            if state.current_track is not None:
-                title = getattr(state.current_track, "title", None)
-            # 1 行分を積む
-            rows.append(
-                {
-                    "guild_id": guild_id,
-                    "guild_name": guild.name if guild else str(guild_id),
-                    "title": title,
-                    "paused": bool(state.is_paused),
-                    "queue_size": state.queue.qsize(),
-                }
-            )
-        # スナップショット一覧
-        return rows
 
     @staticmethod
     def _is_http_url(value: Optional[str]) -> bool:
@@ -1048,8 +739,7 @@ class MusicCog(commands.Cog, name="music_cog"):
     async def _cleanup_idle_mixer(self, state: GuildState):
         """
         ミキサーにソースが残っていない場合、ミキサーを停止してクリーンアップする。
-        TTS等のソースが残っている場合はミキサーを維持する。
-        これにより voice_client.is_playing() が False になり、TTS直接再生が可能になる。
+        ソースが残っている場合はミキサーを維持する。
         """
         if not state.mixer:
             return
@@ -1065,7 +755,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         mixer.stop()
 
     async def _leave_vc_on_queue_empty(self, guild_id: int) -> None:
-        """キュー終了後、TTS 等がミキサーに残っていなければ VC から退出する。"""
+        """キュー終了後、ミキサーにソースが残っていなければ VC から退出する。"""
         # ギルド状態を取得する（存在しなければ何もしない）
         state = self.get_existing_guild_state(guild_id)
         # 状態が無ければ早期リターン
@@ -1077,7 +767,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         # 再生中またはキューに曲が残っていれば退出しない
         if state.is_playing or not state.queue.empty():
             return
-        # TTS 等のソースがミキサーに残っていれば VC を維持する
+        # ソースがミキサーに残っていれば VC を維持する
         if state.mixer and state.mixer.has_sources():
             return
         # Bot が設定した VC ステータスをクリアする（ユーザーロック時は触らない）
@@ -1097,14 +787,13 @@ class MusicCog(commands.Cog, name="music_cog"):
         *,
         retry_track: Optional[Track] = None,
         use_fallback_clients: bool = False,
-        force_current: bool = False,
     ):
         # 内部再生処理では状態を新規作成しない
         state = self.get_existing_guild_state(guild_id)
         if not state:
             return
 
-        if state.is_playing and not seek_seconds > 0 and retry_track is None and not force_current:
+        if state.is_playing and not seek_seconds > 0 and retry_track is None:
             return
 
         is_seek_operation = seek_seconds > 0
@@ -1114,8 +803,8 @@ class MusicCog(commands.Cog, name="music_cog"):
         if retry_track is not None and not is_seek_operation:
             # リトライ対象をそのまま使う
             track_to_play = retry_track
-        elif (is_seek_operation or force_current) and state.current_track:
-            # シーク／再起動復元では現在曲を再利用する（キューから取らない）
+        elif is_seek_operation and state.current_track:
+            # シークでは現在曲を再利用する（キューから取らない）
             track_to_play = state.current_track
         elif state.loop_mode == LoopMode.ONE and state.current_track and not is_seek_operation:
             track_to_play = state.current_track
@@ -1159,11 +848,10 @@ class MusicCog(commands.Cog, name="music_cog"):
                     # キュー終了メッセージを送信する
                     await self._send_background_message(state.last_text_channel_id, "queue_ended")
             # キュー終了時：ミキサーにソースが残っていなければ停止してクリーンアップ
-            # （TTS等が残っている場合はミキサーを維持する）
             await self._cleanup_idle_mixer(state)
             # キュー終了に合わせて VC ステータスをクリアする
             await self._clear_voice_channel_status(guild_id)
-            # キューが空になったら VC から退出する（TTS 再生中はミキサー残存でスキップ）
+            # キューが空になったら VC から退出する（他ソース残存時はミキサー維持でスキップ）
             await self._leave_vc_on_queue_empty(guild_id)
             # 次曲再生処理を終了する
             return
@@ -1176,7 +864,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             # 表示済みフラグも戻す
             state.ui_load_error_seen = False
 
-        if not is_seek_operation and not force_current:
+        if not is_seek_operation:
             # 次に再生するトラックを現在曲として設定する
             state.current_track = track_to_play
             # URL 指定の /play なら停止パネル用履歴に残す
@@ -1325,30 +1013,9 @@ class MusicCog(commands.Cog, name="music_cog"):
             if is_seek_operation:
                 state.is_seeking = False
 
-            # 再起動復元セッションは再生開始成功で削除する
-            self._delete_vc_restart_session(guild_id)
-            # 復元時に一時停止だった場合は再生開始直後に pause する
-            if self._pending_restore_pause.pop(guild_id, False):
-                try:
-                    # VoiceClient があれば pause する
-                    if state.voice_client and state.voice_client.is_playing():
-                        # 再生を一時停止する
-                        state.voice_client.pause()
-                        # 状態フラグを合わせる
-                        state.is_paused = True
-                        # 一時停止時刻を記録する
-                        state.paused_at = time.time()
-                except Exception as pause_err:
-                    # pause 失敗は復元自体を失敗扱いにしない
-                    logger.warning(
-                        "Guild %s: failed to re-apply pause after restore: %s",
-                        guild_id,
-                        pause_err,
-                    )
-
-            # シーク操作以外、または再起動復元（force_current）では Now Playing UI を更新する
+            # シーク操作以外では Now Playing UI を更新する
             # 次曲移行時も最初の /play 応答メッセージを編集して維持し、誰が再生開始したか分かるようにする
-            if state.last_text_channel_id and (not is_seek_operation or force_current):
+            if state.last_text_channel_id and not is_seek_operation:
                 # 再生コントロール一体型UI（LayoutView）を構築する
                 view = MusicControllerView(self, guild_id)
                 # 送信先チャンネルを取得する
@@ -1802,13 +1469,6 @@ class MusicCog(commands.Cog, name="music_cog"):
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"{self.bot.user.name} の MusicCog が正常にロードされました。")
-        # グレースフル再起動で保存した VC セッションを復元する
-        try:
-            # 復元処理を起動する
-            await self.restore_vc_sessions_after_restart()
-        except Exception as e:
-            # 復元失敗でも Cog は生かす
-            logger.warning("VC session restore on_ready failed: %s", e)
 
     @commands.Cog.listener()
     async def on_socket_raw_receive(self, msg: dict):
@@ -2368,65 +2028,6 @@ class MusicCog(commands.Cog, name="music_cog"):
             state.last_now_playing_message = await self._to_durable_message(msg)
             # nowplaying 再表示時もプログレスバー定期更新を開始する
             self._start_progress_updater(ctx.guild.id)
-
-    def _create_now_playing_embed(self, state: GuildState, track: Track) -> discord.Embed:
-        # 再生が一時停止中であるか判定して、表示用アイコンを設定する
-        status_icon = "⏸️" if state.is_paused else "▶️"
-        # 再生が一時停止中であるか判定して、表示用のステータス文字列を設定する
-        status_text = "Paused" if state.is_paused else "Playing"
-        
-        # リクエストユーザーのメンション文字列を初期化する
-        requester_mention = "Unknown"
-        # トラック情報にリクエストユーザーIDが存在するか判定する
-        if track.requester_id:
-            # ユーザーIDをDiscordのメンション形式に変換して設定する
-            requester_mention = f"<@{track.requester_id}>"
-            
-        # Embedオブジェクトを作成し、タイトルとブランドカラー（水色）を設定する
-        embed = discord.Embed(
-            title=f"{status_icon} Now {status_text}",
-            color=discord.Color.from_rgb(79, 194, 255)
-        )
-        # Embedのメイン説明文として、再生中のトラックタイトルをリンク付きで設定する
-        embed.description = f"**[{track.title}]({track.url})**"
-        
-        # 現在の再生位置（秒）を取得する
-        current_pos = state.get_current_position()
-        # 再生位置と曲の長さからプログレスバー文字列を生成する
-        progress_bar = self._create_progress_bar(current_pos, track.duration)
-        # 現在の再生時間と曲の総時間をフォーマットした文字列を構築する
-        duration_str = f"`{format_duration(current_pos)}` / `{format_duration(track.duration)}`"
-        # プログレスバーと再生時間を表示するフィールドをEmbedに追加する
-        embed.add_field(name="Progress", value=f"{progress_bar}\n{duration_str}", inline=False)
-        
-        # アップローダー/チャンネル名が定義されているか判定し、無ければ「Unknown」にする
-        uploader_val = track.uploader if track.uploader else "Unknown"
-        # チャンネルURLがあればリンク付きにする
-        if track.uploader_url and uploader_val != "Unknown":
-            # Embed 用の Markdown リンクにする
-            uploader_val = f"[{uploader_val}]({track.uploader_url})"
-        # アップローダー名を記載するフィールドをEmbedに追加する
-        embed.add_field(name="Channel / Uploader", value=uploader_val, inline=True)
-        # リクエストユーザーを記載するフィールドをEmbedに追加する
-        embed.add_field(name="Requested By", value=requester_mention, inline=True)
-        # 現在有効になっているループモード名を表示するフィールドをEmbedに追加する
-        embed.add_field(name="Loop Mode", value=f"`{state.loop_mode.name.lower()}`", inline=True)
-        
-        # 現在のキューに残っている曲数を取得する
-        remaining = state.queue.qsize()
-        # 残り曲数を表示するフィールドをEmbedに追加する
-        embed.add_field(name="Queue Status", value=f"{remaining} songs in queue", inline=True)
-        
-        # サムネイル画像のURLが有効であり、かつ文字列「None」ではないか判定する
-        if track.thumbnail and track.thumbnail.strip() and track.thumbnail != "None":
-            # サムネイルURLをEmbedの右上サムネイル画像として登録する
-            embed.set_thumbnail(url=track.thumbnail)
-            
-        # フッターにMOMOKAミュージックプレイヤーのクレジットを設定する
-        # フッターに単体音楽Bot名を設定する
-            embed.set_footer(text="ARONA Music Player")
-        # 構築完了したEmbedオブジェクトを返す
-        return embed
 
     def _format_ui_load_error(
         self,

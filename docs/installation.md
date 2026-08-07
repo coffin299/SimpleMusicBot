@@ -79,5 +79,6 @@ music:
 ## 制約
 
 - TTS / LLM / GUI / 寄付連携は含みません
-- 再起動後の VC 再生自動復元は無効です
+- 再起動後の VC 再生自動復元は含みません
+- Google Drive 連携は含みません
 - Spotify 等の DRM 保護 URL は再生できません

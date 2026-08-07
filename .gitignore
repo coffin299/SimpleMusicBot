@@ -13,12 +13,7 @@
 !config.default.yaml
 !start.bat
 !**/*.py
-!services/
-!domain/
-!domain/entity/
 !cogs/
 !cogs/**/*
-!tests/
-!tests/**/*
 !docs/
 !docs/**/*

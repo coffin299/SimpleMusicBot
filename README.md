@@ -31,7 +31,6 @@ music-bot-arona/
 ├── config.yaml                 # 実設定（自分で作成・Git 管理外）
 ├── requirements.txt
 ├── start.bat                   # Creates .venv if missing, installs deps, starts bot
-├── tests/                      # 単体テスト
 └── docs/                       # Markdown ドキュメント
 ```
 

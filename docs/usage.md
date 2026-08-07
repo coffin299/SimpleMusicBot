@@ -79,3 +79,4 @@ Music Bot Arona（Momoka Music Cog 移植版）の使い方です。
 - TTS 読み上げとの同時ミキシング操作
 - LLM からの音楽コマンド実行
 - 再起動後の自動再生復元
+- Google Drive 連携

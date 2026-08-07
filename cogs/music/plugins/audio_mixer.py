@@ -2,7 +2,6 @@
 import discord
 import struct
 import asyncio
-import io
 import shlex
 import subprocess
 import tempfile
@@ -65,7 +64,7 @@ class AudioMixer(discord.AudioSource):
         with self._thread_lock:
             sources_to_process = list(self.sources.items())
 
-        # 音楽・TTSを含めて再生可能な音源が無い場合はプレイヤーを終了する
+        # 再生可能な音源が無い場合はプレイヤーを終了する
         if not sources_to_process:
             return b''
 
@@ -147,7 +146,7 @@ class AudioMixer(discord.AudioSource):
                     except Exception as e:
                         logger.error(f"Error in on_source_removed_callback for '{name}': {e}")
 
-        # 音源削除後に音楽・TTSとも残っていない場合だけプレイヤーを終了する
+        # 音源削除後にソースが残っていない場合だけプレイヤーを終了する
         if not self.has_sources():
             return b''
 
@@ -685,45 +684,3 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                     self._stderr_file = None
             except Exception:
                 pass
-
-
-class TTSAudioSource(discord.FFmpegPCMAudio):
-    """TTS読み上げ用のFFmpegオーディオソース"""
-    def __init__(self, source, *, text: str, guild_id: int, **kwargs):
-        # BytesIOの場合はpipe=Trueを強制
-        if isinstance(source, io.BytesIO):
-            kwargs['pipe'] = True
-
-        # BytesIOの参照を保持してクリーンアップ時にクローズ
-        self._source_buffer = source if isinstance(source, io.BytesIO) else None
-        # テキスト（ログ用、30文字以上は切り詰め）
-        self.text = text if len(text) < 30 else text[:27] + "..."
-        # ギルドID（ログ用）
-        self.guild_id = guild_id
-
-        try:
-            super().__init__(source, **kwargs)
-        except Exception as e:
-            logger.error(f"Guild {guild_id}: Failed to initialize TTSAudioSource: {e}")
-            # 初期化失敗時にもバッファをクローズ
-            if self._source_buffer:
-                try:
-                    self._source_buffer.close()
-                except Exception:
-                    pass
-            raise
-
-    def cleanup(self):
-        """FFmpegプロセスとバッファのクリーンアップ"""
-        logger.info(f"Guild {self.guild_id}: TTS FFmpeg process for '{self.text}' is being cleaned up.")
-        try:
-            super().cleanup()
-        finally:
-            # BytesIOバッファを明示的にクローズしてメモリを解放
-            if self._source_buffer:
-                try:
-                    self._source_buffer.close()
-                except Exception as e:
-                    logger.warning(f"Guild {self.guild_id}: Failed to close TTS buffer: {e}")
-                finally:
-                    self._source_buffer = None

@@ -90,8 +90,6 @@ class MusicBot(commands.Bot):
     def __init__(self, config: Dict[str, Any]):
         # Cog / コマンドから参照できるよう設定を保持する。
         self.config = config
-        # 単体Bot識別子（再起動API互換用）。
-        self.bot_id = str(config.get("bot_id", "arona"))
         # プレフィックスコマンド用の接頭辞（hybrid 互換）。
         prefix = config.get("prefix", "!")
         # Voice / スラッシュに必要な Intents を用意する。
