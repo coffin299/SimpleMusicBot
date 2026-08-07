@@ -46,10 +46,7 @@ copy config.default.yaml config.yaml
 
 ### Discord Developer Portal
 
-Privileged Gateway Intents:
-
-- MESSAGE CONTENT INTENT
-- SERVER MEMBERS INTENT
+Privileged Gateway Intents: 不要
 
 OAuth2 Scopes: `bot`, `applications.commands`  
 主要権限: Send Messages / Embed Links / Connect / Speak / Use Voice Activity など
