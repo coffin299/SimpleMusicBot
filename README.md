@@ -1,4 +1,4 @@
-# music-bot-arona
+# SimpleMusicBot
 
 Discord 上で音楽を再生する単体動作型 Bot です。  
 再生エンジン・コマンド・UI は [ProjectMOMOKA](https://github.com/coffin299/ProjectMOMOKA) の Music Cog を移植しています。
