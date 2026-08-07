@@ -48,7 +48,7 @@ copy config.default.yaml config.yaml
 Privileged Gateway Intents:
 
 - スラッシュコマンド（`/play` など）のみ使う場合は不要
-- プレフィックスコマンド（既定 `!play` など）も使う場合は **MESSAGE CONTENT INTENT** を ON にする
+- プレフィックスコマンド（既定 `#play` など）も使う場合は **MESSAGE CONTENT INTENT** を ON にする
 
 OAuth2 Scopes: `bot`, `applications.commands`  
 主要権限: Send Messages / Embed Links / Connect / Speak / Use Voice Activity など
