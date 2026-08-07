@@ -1,8 +1,8 @@
-# 単体音楽Bot用の既定設定（ProjectMOMOKA-1 music_config を正とする）
 # 実運用では本ファイルを config.yaml へコピーし、token のみ必ず変更すること。
 
 token: "YOUR_BOT_TOKEN_HERE"
-prefix: "!"
+# コマンド以外でも使う場合は下記をなんかいい感じのに変えてくれ
+prefix: "#"
 
 music:
   default_volume: 20
